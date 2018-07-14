@@ -2,7 +2,8 @@
 <html>
 <head>
   <!-- setup template for slidoc server --->
-  <!-- setup parameters: site_name, session_name, status, site_updates, multisite, aliases, sites , server version, versions -->
+  <!-- setup parameters: site_name, session_name, status, -->
+  <!-- site_updates, multisite, aliases, sites, cert_expiry, server version, versions -->
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta charset="UTF-8">
 
@@ -45,6 +46,10 @@
     <li><a class="clickable" href="javascript:slidocConfirmAction('shutdown')">shutdown</a>: Shutdown{{All}}</li>
     <hr>
     <li><a class="clickable" href="javascript:slidocConfirmAction('reload')">reload</a>: Reload{{All}}</li>
+    {% if cert_expiry %}
+      <hr>
+      <li><a class="clickable" href="javascript:slidocConfirmAction('renewssl')">renew_ssl</a>: Renew SST cert (expires: {{cert_expiry}})</li>
+    {% end %}
     <hr>
     <li><a class="clickable" href="javascript:slidocPromptAction('backup','Backup dirname (end with hyphen to append timestamp):')">backup</a>: Backup{{All}}</li>
     <hr>

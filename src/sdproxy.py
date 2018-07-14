@@ -1476,7 +1476,7 @@ def suspend_cache(action=''):
         schedule_update(force=True)
 
 def shutdown_loop():
-    print("Completed IO loop shutdown", file=sys.stderr)
+    print('****Completed IO loop SHUTDOWN', Settings['site_name'], file=sys.stderr)
     for sheetName in sorted(list(Locked_proxy_sheets)):
         try:
             lockUpstreamProxy(sheetName, unlock=True)

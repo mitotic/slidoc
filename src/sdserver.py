@@ -908,9 +908,14 @@ class RootActionHandler(BaseHandler):
             self.write(link_html)
 
         if action == '_setup':
+            cert_expiry = ''
+            days_left = cert_daysleft()
+            if days_left is not None:
+                cert_expiry = str(days_left) + ' days'
             self.render('setup.html', site_name='', session_name='', status='', site_updates=[],
                         multisite=Options['multisite'], aliases=Global.userRoles.list_aliases(),
-                        sites=Options['site_list'], server_version=sliauth.VERSION, versions=SiteProps.siteScriptVersions)
+                        sites=Options['site_list'], cert_expiry=cert_expiry,
+                        server_version=sliauth.VERSION, versions=SiteProps.siteScriptVersions)
 
         elif action == '_alias':
             amaps = []
@@ -976,6 +981,16 @@ class RootActionHandler(BaseHandler):
             shutdown_sites(wait=True)
             reload_server()
             self.displayMessage('Reloading...', back_url='/_setup')
+
+        elif action == '_renewssl':
+            outHtml = ''
+            certStatus = renew_ssl()
+            if certStatus:
+                outHtml += preElement(certStatus + '\n')
+            print >> sys.stderr, 'sdserver: Shutting down sites (blocking)'
+            shutdown_sites(wait=True)
+            reload_server()
+            self.displayMessage(outHtml+'<p></p>Reloading...', back_url='/_setup')
 
         elif action == '_update':
             outHtml = ''
@@ -1535,9 +1550,14 @@ class ActionHandler(BaseHandler):
             upload_key = sliauth.gen_hmac_token(Options['auth_key'], 'upload:')
             active_users = sorted( list(set(x[1] for x in WSHandler.get_connections())) )
             idle_time = math.floor(time.time() - max([max(ws.msgTime for ws in x[2]) for x in WSHandler.get_connections() if x[2]] or [0])) if active_users else ''
+            site_status = ''
+            days_left = cert_daysleft()
+            if days_left is not None and days_left < 30:
+                site_status = 'SSL certificate expires in %s days' % days_left
+
             self.render('dashboard.html', site_name=Options['site_name'], site_label=Options['site_label'],
                         site_title=Options['site_title'], site_access=sdproxy.Settings['site_access'],
-                        version=sliauth.get_version(), interactive=WSHandler.getInteractiveSession()[0],
+                        version=sliauth.get_version(), status=site_status, interactive=WSHandler.getInteractiveSession()[0],
                         admin_users=Options['admin_users'], grader_users=Options['grader_users'], guest_users=Options['guest_users'],
                         start_date=sliauth.print_date(Options['start_date'],not_now=True),
                         lock_date=sliauth.print_date(sdproxy.Settings['lock_date'],not_now=True),
@@ -5758,7 +5778,7 @@ def createApplication():
                      ]
     if not Options['site_number']:
         # Single/root server
-        home_handlers += [ (r"/(_(backup|deactivate|logout|reload|setup|shutdown|terminate))", RootActionHandler) ]
+        home_handlers += [ (r"/(_(backup|deactivate|logout|reload|renewssl|setup|shutdown|terminate))", RootActionHandler) ]
         home_handlers += [ (r"/(_(alias))/([-\w.,@=]+)", RootActionHandler) ]
         home_handlers += [ (r"/(_(backup|restart|terminate|update))/([a-zA-Z][-\w.]*)", RootActionHandler) ]
         if Options['multisite']:
@@ -5767,7 +5787,7 @@ def createApplication():
             home_handlers += [ (r"/(_(site_settings))", SiteActionHandler) ]
 
         home_handlers += [ (r"/"+RESOURCE_PATH+"/(.*)", UncachedStaticFileHandler, {'path': os.path.join(scriptdir,'templates')}) ]
-        home_handlers += [ (r"/"+ACME_PATH+"/(.*)", UncachedStaticFileHandler, {'path': 'acme-challenge'}) ]
+        home_handlers += [ (r"/"+ACME_PATH+"/(.*)", UncachedStaticFileHandler, {'path': 'acme-web/'+ACME_PATH}) ]
         if Options['libraries_dir']:
             home_handlers += [ (r"/"+LIBRARIES_PATH+"/(.*)", CachedStaticFileHandler, {'path': Options['libraries_dir']}) ]
 
@@ -6553,22 +6573,29 @@ def shutdown_sites(wait=False):
             relay_addr = SiteProps.relay_map(get_site_number(site_name))
             try:
                 retval = sendPrivateRequest(relay_addr, path='/'+site_name+'/_shutdown?root='+sliauth.safe_quote(Options['server_key']))
+                print >> sys.stderr, 'sdserver.shutdown_sites: ****Shutting down site', site_name
             except Exception, excp:
                 print >> sys.stderr, 'sdserver.shutdown_sites: Error in shutting down site', site_name, excp
 
     if wait:
         for site_name, child in active:
-            print >> sys.stderr, 'sdserver.shutdown_sites: Waiting for site %s to exit (blocking)' % site_name
+            print >> sys.stderr, 'sdserver.shutdown_sites: ****Waiting for site %s to exit (blocking)' % site_name
             child.proc.wait()
+            print >> sys.stderr, 'sdserver.shutdown_sites: ****Exited site %s' % site_name
+
+    if Global.proxy_server:
+        Global.proxy_server.stop()
+        Global.proxy_server = None
+        print >> sys.stderr, 'sdserver: ****STOPPED proxy'
 
 def shutdown_root():
-        IOLoop.current().add_callback(shutdown_loop)
+    IOLoop.current().add_callback(shutdown_loop)
 
 def shutdown_loop():
+    print >> sys.stderr, 'sdserver.shutdown_loop: ****starting...', Options['site_name']
     shutdown_server()
     IOLoop.current().stop()
-    if Options['debug']:
-        print >> sys.stderr, 'sdserver.shutdown_loop:'
+    print >> sys.stderr, 'sdserver.shutdown_loop: ****COMPLETED', Options['site_name']
 
 def shutdown_server():
     if Global.http_server:
@@ -6580,16 +6607,47 @@ def shutdown_server():
         except Exception, excp:
             print >> sys.stderr, 'sdserver.shutdown_server: ERROR', sexcp
             
-    if Options['debug']:
-        print >> sys.stderr, 'sdserver.shutdown_server:'
+    print >> sys.stderr, 'sdserver.shutdown_server:', '****Completed SHUTDOWN of server', Options['site_name']
     
 
 def reload_server():
     try:
         os.utime(RELOAD_WATCH_FILE, None)
-        print >> sys.stderr, 'sdserver.Reloading server...'
+        print >> sys.stderr, 'sdserver.Reloading server****'
     except Exception, excp:
         print >> sys.stderr, 'sdserver.ERROR: Reload server failed - %s' % excp
+
+
+def cert_daysleft():
+    if not Options['ssl_options'] or not Options['ssl_options']['certfile'].startswith('certbot/'):
+        return None
+    try:
+        cmd = ['openssl', 'x509', '-enddate', '-noout', '-in', Options['ssl_options']['certfile']]
+        expdatestr = subprocess.check_output(cmd).split('=')[-1].strip()
+        expdate = datetime.datetime.strptime(expdatestr,'%b %d %H:%M:%S %Y %Z')
+        return (expdate - datetime.datetime.today()).days
+    except Exception, excp:
+        print >> sys.stderr, 'sdserver/cert_daysleft: ERROR: '+' '.join(cmd) + ': '+ str(excp)
+        return -9999
+
+def renew_ssl():
+    outText = ''
+    try:
+        server_domain = Options['server_url'].split('//')[1].split(':')[0]
+        cmd = ['certbot', 'certonly', '-n', '--webroot', '--config-dir', './certbot/config', '--logs-dir', './certbot/log', '--work-dir', './certbot/work', '-w', './acme-web', '-d', server_domain]
+
+        print >> sys.stderr, 'Executing: '+' '.join(cmd)
+        outText += 'Executing: '+' '.join(cmd) + '\n'
+        certOutput = subprocess.check_output(cmd)
+
+        print >> sys.stderr, 'Output:\n%s' % certOutput
+        outText += 'Output:\n'+certOutput
+    except Exception, excp:
+        errMsg = 'Renewal of SSL cert: '+str(excp)
+        print >> sys.stderr, errMsg
+        outText += errMsg + '\n'
+
+    return outText
 
 class UserRoles(object):
     def __init__(self):
@@ -6731,6 +6789,10 @@ class UserRoles(object):
 Global.userRoles = UserRoles()
 
 def start_multiproxy():
+    if Options['ssl_options'] and (not os.path.exists(Options['ssl_options']['certfile']) or not os.path.exists(Options['ssl_options']['keyfile'])):
+        print >> sys.stderr, 'ERROR: SSL options file', Options['ssl_options'], 'not found'
+        return
+
     import multiproxy
     class ProxyRequestHandler(multiproxy.RequestHandler):
         def get_relay_addr_uri(self, pipeline, header_list):
@@ -6753,23 +6815,28 @@ def start_multiproxy():
             return retval
 
     Global.proxy_server = multiproxy.ProxyServer(Options['host'], Options['port'], ProxyRequestHandler, log_interval=0,
-                      io_loop=IOLoop.current(), xheaders=True, masquerade="server/1.2345", ssl_options=Options['ssl_options'], debug=True)
+                      xheaders=True, masquerade="server/1.2345", ssl_options=Options['ssl_options'], debug=True)
 
 def start_server(site_number=0, restart=False):
     # Start site/root server
     Options['server_start'] = sliauth.create_date()
+    if Options['ssl_options'] and not site_number:
+        # Redirect plain HTTP to HTTPS
+        handlers = [ (r'/'+ACME_PATH+'/(.*)', UncachedStaticFileHandler, {'path': 'acme-web/'+ACME_PATH}) ]
+        handlers += [ (r'/.*', PlainHTTPHandler) ]
+        plain_http_app = tornado.web.Application(handlers)
+        plain_http_app.listen(80 + (CommandOpts.port - (CommandOpts.port % 1000)), address=Options['host'])
+        if not os.path.exists(Options['ssl_options']['certfile']) or not os.path.exists(Options['ssl_options']['keyfile']):
+            print >> sys.stderr, 'ERROR: SSL options file', Options['ssl_options'], 'not found'
+            print >> sys.stderr, 'Listening on HTTP port for SSL cert validation'
+            IOLoop.current().start()
+            return
+        print >> sys.stderr, 'Listening on HTTP port to redirect to HTTPS'
+
     if Options['ssl_options'] and not Options['multisite']:
         Global.http_server = tornado.httpserver.HTTPServer(createApplication(), ssl_options=Options['ssl_options'])
     else:
         Global.http_server = tornado.httpserver.HTTPServer(createApplication())
-
-    if Options['ssl_options'] and not site_number:
-        # Redirect plain HTTP to HTTPS
-        handlers = [ (r'/'+ACME_PATH+'/(.*)', UncachedStaticFileHandler, {'path': 'acme-challenge'}) ]
-        handlers += [ (r'/.*', PlainHTTPHandler) ]
-        plain_http_app = tornado.web.Application(handlers)
-        plain_http_app.listen(80 + (CommandOpts.port - (CommandOpts.port % 1000)), address=Options['host'])
-        print >> sys.stderr, 'Listening on HTTP port'
 
     if Options['reload'] and not site_number:
         try:
@@ -7369,6 +7436,7 @@ def main():
         # Start secondary server
         site_server_setup()
         start_server(Options['site_number'])
+        print >> sys.stderr, '****Exiting secondary server', Options['site_name']
         return
 
     # Single or primary server
@@ -7447,6 +7515,7 @@ def main():
     
     # Start primary server
     start_server()
+    print >> sys.stderr, '****Exiting root/primary server'
 
 if __name__ == "__main__":
     main()

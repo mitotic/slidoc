@@ -2,7 +2,7 @@
 <html>
 <head>
 <!-- dashboard template for slidoc server --->
-<!-- dashboard parameters: site_name, site_label, site_title, site_access, version, interactive, start_date, lock_date, end_date, admin_users, grader_users, guest_users, site_menu, upload_key, gradebook_release, server_start, active_users, idle_time-->
+<!-- dashboard parameters: site_name, site_label, site_title, site_access, version, status, interactive, start_date, lock_date, end_date, admin_users, grader_users, guest_users, site_menu, upload_key, gradebook_release, server_start, active_users, idle_time-->
 
 {% include "base.html" %}
 
@@ -29,6 +29,8 @@
   <hr>
 
   <h3>{{site_label}}: {{site_title}}</h3>
+
+  <b style="color: red;">{{status}}</b><br>
 
   Current interactive module session: <b>{% if interactive %}<a class="clickable" href="{{ site_prefix }}/_manage/{{interactive}}">{{ interactive }}</a><br>{%else %}none{% end %}</b>
   <hr>
