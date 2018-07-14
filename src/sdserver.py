@@ -56,7 +56,7 @@ import urllib
 import uuid
 import zipfile
 
-from collections import defaultdict, OrderedDict
+from collections import defaultdict, OrderedDict, namedtuple
 
 import tornado.auth
 import tornado.autoreload
@@ -95,6 +95,7 @@ Options = {
     'auth_type': '',
     'backup_dir': '_DEFAULT_BACKUPS',
     'backup_hhmm': '',
+    'backup_options': [],
     'debug': False,
     'dry_run': False,
     'dry_run_file_modify': False,  # If true, allow source/web/plugin file mods even for dry run (e.g., local copy)
@@ -837,9 +838,9 @@ class HomeHandler(BaseHandler):
             
         if Options['multisite'] and not Options['site_number']:
             # Primary server
-            siteHide = []
-            siteRoles = []
-            siteRestrictions = []
+            openSites = []
+            restrictedSites = []
+            SiteInfo = namedtuple('SiteInfo', ['name', 'restrict', 'role', 'hide', 'label', 'title'])
             for siteName in Options['site_list']:
                 siteConfig = SiteOpts[siteName]
                 siteRole = self.get_id_from_cookie(role=True, for_site=siteName)
@@ -857,18 +858,16 @@ class HomeHandler(BaseHandler):
                 if not child or child.proc.poll() is not None:
                     siteRestriction += ' <a href="/_restart/%s">RESTART</a>' % siteName
 
-                siteHide.append(hideStr)
-                siteRoles.append(siteRole)
-                siteRestrictions.append(siteRestriction)
+                tem_tuple = SiteInfo(siteName, siteRestriction, siteRole, hideStr, siteConfig['site_label'], siteConfig['site_title'])
+                if siteRestriction:
+                    restrictedSites.append(tem_tuple)
+                else:
+                    openSites.append(tem_tuple)
 
-            site_labels = [SiteOpts[siteName]['site_label'] for siteName in Options['site_list']]
-            site_titles = [SiteOpts[siteName]['site_title'] for siteName in Options['site_list']]
             cookieData = self.get_id_from_cookie(data=True) or {}
             self.render('index.html', user=self.get_current_user(), status='',
                          login_url=Global.login_url, logout_url=Global.logout_url, global_role=self.get_id_from_cookie(role=True),
-                         sites=Options['site_list'], site_roles=siteRoles, site_labels=site_labels,
-                         site_titles=site_titles, site_hide=siteHide, site_restrictions=siteRestrictions,
-                         batch_mode=cookieData.get('batch',''))
+                         batch_mode=cookieData.get('batch',''), sites=openSites+restrictedSites)
             return
         elif Options.get('_index_html'):
             # Not authenticated
@@ -984,12 +983,9 @@ class RootActionHandler(BaseHandler):
 
         elif action == '_renewssl':
             outHtml = ''
-            certStatus = renew_ssl()
-            if certStatus:
-                outHtml += preElement(certStatus + '\n')
-            print >> sys.stderr, 'sdserver: Shutting down sites (blocking)'
-            shutdown_sites(wait=True)
-            reload_server()
+            renew_status = renew_ssl(force=True)
+            if renew_status:
+                outHtml += preElement(renew_status + '\n')
             self.displayMessage(outHtml+'<p></p>Reloading...', back_url='/_setup')
 
         elif action == '_update':
@@ -6439,42 +6435,54 @@ def backupSite(dirname='', broadcast=False):
     if backup_name == Options['site_name'] or backup_name in Global.predefined_sites:
         raise Exception('Backup directory name %s conflicts with site name' % backup_name)
 
-    if not BaseHandler.site_backup_dir:
-        return sliauth.errlog('Error: No backup directory for site '+Options['site_name'])
+    if not os.path.isdir(BaseHandler.site_backup_dir):
+        return sliauth.errlog('ERROR: BACKUP FAILED - no backup directory for site '+Options['site_name']+': '+BaseHandler.site_backup_dir)
 
     backup_path = os.path.join(BaseHandler.site_backup_dir, backup_name)
 
-    if backup_name == 'daily' and os.path.exists(backup_path):
-        # Copy previous daily backup to corresponding day/week backup before updating it
+    save_prefix, save_fmt = '', ''
+    if 'weekly' in Options['backup_options']:
+        save_prefix = 'week'
+        save_fmt = '%U'
+    elif 'monthly' in Options['backup_options']:
+        save_prefix = 'month'
+        save_fmt = '%M'
+
+    if backup_name == 'daily' and os.path.exists(backup_path) and (save_fmt or 'seven_day' in Options['backup_options']):
+        # Copy previous daily backup to corresponding day/week/month backup before updating it
         try:
             with open(os.path.join(backup_path,BACKUP_VERSION_FILE), 'r') as f:
                 prev_bak_date = sliauth.parse_date(f.read().split()[0])
                 if prev_bak_date:
-                    # Save last daily backup (excluding *_images dir)
-                    day_path = os.path.join(BaseHandler.site_backup_dir, 'day'+prev_bak_date.strftime('%w'))
-                    exec_cmd('rsync', ['-rpt', '--delete', '--exclude=*_images/'], [backup_path+'/', day_path])
-                    backupLink(day_path)
+                    if 'seven_day' in Options['backup_options']:
+                        # Save daily backup for last seven days
+                        day_path = os.path.join(BaseHandler.site_backup_dir, 'day'+prev_bak_date.strftime('%w'))
+                        rsync_cmd = ['-rpt', '--delete']
+                        if 'seven_day_images' not in Options['backup_options']:
+                            # Exclude *_images dir from copy of daily backup (to save space)
+                            rsync_cmd += ['--exclude=*_images/']
 
-                    if datetime.datetime.now().strftime('%U') != prev_bak_date.strftime('%U'):
-                        # New week; save last daily backup for previous week (including images)
-                        week_path = os.path.join(BaseHandler.site_backup_dir, 'week'+prev_bak_date.strftime('%U'))
-                        exec_cmd('rsync', ['-rpt', '--delete'], [backup_path+'/', week_path])
-                        backupLink(week_path)
+                        exec_cmd('rsync', rsync_cmd, [backup_path+'/', day_path])
+                        backupLink(day_path)
+
+                    if save_fmt and (datetime.datetime.now().strftime(save_fmt) != prev_bak_date.strftime(save_fmt)):
+                        # New week/month; save last daily backup from previous week/month (including *_images)
+                        save_path = os.path.join(BaseHandler.site_backup_dir, save_prefix+prev_bak_date.strftime(save_fmt))
+                        exec_cmd('rsync', ['-rpt', '--delete'], [backup_path+'/', save_path])
+                        backupLink(save_path)
                         if os.path.exists(SERVER_LOGFILE):
-                            if not backupCopy(SERVER_LOGFILE, week_path):
-                                # Remove logfile on successful weekly backup copy (it should be recreated)
+                            if not backupCopy(SERVER_LOGFILE, save_path):
+                                # Remove logfile on successful weekly/monthly backup copy (it should be recreated)
                                 try:
                                     os.remove(SERVER_LOGFILE)
                                 except Exception, excp:
                                     print >> sys.stderr, 'ERROR:backupSite: Failed to remove logfile', SERVER_LOGFILE, excp
 
         except Exception, excp:
-            print >> sys.stderr, 'ERROR:backupSite: weekly backup', Options['site_name'], excp
+            print >> sys.stderr, 'ERROR:backupSite: daily/weekly/monthly backup', Options['site_name'], excp
 
     backupWrite(backup_path, BACKUP_VERSION_FILE, '%s v%s\n' % (sliauth.iso_date(nosec=True), sliauth.get_version()),
                 create_dir=True)
-
-    ##backupWrite(backup_path, datetime.datetime.now().strftime('_date%Y-%m-%d'), '', create_dir=True)
 
     errorList = []
     if not Options['site_name']:
@@ -6630,8 +6638,14 @@ def cert_daysleft():
         print >> sys.stderr, 'sdserver/cert_daysleft: ERROR: '+' '.join(cmd) + ': '+ str(excp)
         return -9999
 
-def renew_ssl():
+def renew_ssl(force=False):
     outText = ''
+    if not force:
+        days_left = cert_daysleft()
+        if days_left is None or days_left <= -9999 or days_left >= 30:
+            return outText
+        print >> sys.stderr, 'sdserver: Reloading after renewing SSL cert', days_left, 'days before expiry:', sliauth.iso_date(nosubsec=True)
+
     try:
         server_domain = Options['server_url'].split('//')[1].split(':')[0]
         cmd = ['certbot', 'certonly', '-n', '--webroot', '--config-dir', './certbot/config', '--logs-dir', './certbot/log', '--work-dir', './certbot/work', '-w', './acme-web', '-d', server_domain]
@@ -6641,11 +6655,15 @@ def renew_ssl():
         certOutput = subprocess.check_output(cmd)
 
         print >> sys.stderr, 'Output:\n%s' % certOutput
-        outText += 'Output:\n'+certOutput
+        outText += 'Renewal status:\n'+certOutput
     except Exception, excp:
-        errMsg = 'Renewal of SSL cert: '+str(excp)
+        errMsg = 'Error in renewal of SSL cert: '+str(excp)
         print >> sys.stderr, errMsg
         outText += errMsg + '\n'
+
+    print >> sys.stderr, 'sdserver: Shutting down sites (blocking)'
+    shutdown_sites(wait=True)
+    reload_server()
 
     return outText
 
@@ -7090,15 +7108,23 @@ def setup_backup():
     backupInterval = 86400
     if curTimeSec+60 > backupTimeSec:
         backupTimeSec += backupInterval
-    print >> sys.stderr, Options['site_name'] or 'ROOT', 'Scheduled daily backup in dir %s, starting at %s' % (Options['backup_dir'], sliauth.iso_date(sliauth.create_date(backupTimeSec*1000.0)))
+    print >> sys.stderr, Options['site_name'] or 'ROOT', 'Scheduled daily backup in dir %s, starting at %s' % (Options['backup_dir'], sliauth.iso_date(sliauth.create_date(backupTimeSec*1000.0))), Options['backup_options']
     def start_backup():
         if Options['debug']:
-            print >> sys.stderr, Options['site_name'] or 'ROOT', 'Starting periodic backup'
-        backupSite('', True)
-        Global.backup = PeriodicCallback(functools.partial(backupSite,'',True), backupInterval*1000.0)
+            print >> sys.stderr, Options['site_name'] or 'ROOT', 'Setting up periodic backup at', Options['backup_hhmm']
+        periodic_backup()
+        Global.backup = PeriodicCallback(periodic_backup, backupInterval*1000.0)
         Global.backup.start()
 
     IOLoop.current().call_at(backupTimeSec, start_backup)
+
+def periodic_backup():
+    print >> sys.stderr, Options['site_name'] or 'ROOT', 'Starting periodic backup', sliauth.iso_date(nosubsec=True)
+    if 'no_backup' not in Options['backup_options']:
+        backupSite('', True)
+    if 'renew_ssl' in Options['backup_options']:
+        renew_ssl()
+    print >> sys.stderr, Options['site_name'] or 'ROOT', 'Ending periodic backup', sliauth.iso_date(nosubsec=True)
 
 def update_session_settings(site_settings):
     # For single or secondary server (NOT CURRENTLY USED)
@@ -7220,7 +7246,7 @@ def main():
     define("auth_key", default=Options["auth_key"], help="Authentication key for admin user (at least 20 characters if not localhost; SHOULD be randomly generated, e.g., using 'sliauth.py -g >> _slidoc_config.py')")
     define("auth_type", default=Options["auth_type"], help="none|adminonly|token|@example.com|google|twitter,key,secret,,...")
     define("auth_users", default='', help="filename.txt or [userid]=username[@domain][:role[:site1,site2...];...")
-    define("backup", default="", help="=Backup_dir[,HH:MM] End Backup_dir with hyphen to automatically append timestamp")
+    define("backup", default="", help="=Backup_dir,HH:MM,seven_day,seven_day_images,weekly,monthly,no_backup,renew_ssl; End Backup_dir with hyphen to automatically append timestamp")
     define("config_digest", default="", help="Config file digest (used for secondary server only)")
     define("debug", default=False, help="Debug mode")
     define("dry_proxy_url", default="", help="Dry proxy server URL (used for secondary server only)")
@@ -7429,6 +7455,7 @@ def main():
         comps = CommandOpts.backup.split(',')
         Options['backup_dir'] = comps[0]
         Options['backup_hhmm'] = comps[1] if len(comps) > 1 else '03:00'
+        Options['backup_options'] = comps[2:]
 
     BaseHandler.setup_dirs(Options['site_name'])
 
@@ -7448,7 +7475,7 @@ def main():
     if CommandOpts.timezone:
         os.environ['TZ'] = CommandOpts.timezone
         time.tzset()
-        print >> sys.stderr, 'sdserver: Timezone =', CommandOpts.timezone
+        print >> sys.stderr, 'sdserver: Timezone =', CommandOpts.timezone, sliauth.iso_date(nosubsec=True)
 
     print >> sys.stderr, 'sdserver: ---------- AUTHENTICATION %s ----------' % CommandOpts.auth_type.split(',')[0]
 

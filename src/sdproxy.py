@@ -472,7 +472,7 @@ def backupSheets(dirpath):
     # Returns null string on success or error string list
     # (synchronous)
     if Global.previewStatus:
-        return [ 'Cannot backup when previewing session '+Global.previewStatus['sessionName'] ]
+        return [ 'Cannot backup when previewing session '+Global.previewStatus['sessionName']+' in site '+Settings['site_name'] ]
 
     suspend_cache('backup')
     if Settings['debug']:

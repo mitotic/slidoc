@@ -3,7 +3,7 @@
 <head>
 
 <!-- home index template for slidoc server --->
-<!-- index parameters: user, status, login_url, logout_url, global_role, sites, site_roles, site_labels, site_titles, site_hide, site_restrictions, batch_mode -->
+<!-- index parameters: user, status, login_url, logout_url, global_role, batch_mode, sites(name,restrict,role,hide,label,title) -->
 
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta charset="UTF-8">
@@ -71,7 +71,7 @@ function newSite() {
     <h2 class="home-title">Slidoc sites {% if global_role == 'admin' %} <a class="clickable" href="/_setup">&#9881;</a>{% end %} <a class="clickable" href="_docs/index.html" target="_blank">&#xfe56;</a></h2>
 
     <div class="home-user">
-      <span><b>{% if user %}User: {{user}}{% if any(site_roles) %}/special{% elif batch_mode %}/{{batch_mode}}{% end %}</b> (<a class="clickable" href="{{ logout_url }}">logout</a> )
+      <span><b>{% if user %}User: {{user}}{% if any(siteInfo.role for siteInfo in sites) %}/special{% elif batch_mode %}/{{batch_mode}}{% end %}</b> (<a class="clickable" href="{{ logout_url }}">logout</a> )
       {% else %}
       <a class="clickable" href="{{ login_url }}">Login</a>
       {% end %}
@@ -82,9 +82,9 @@ function newSite() {
   <b>{{ status }}</b><br>
 
   <ul>
-      {% for j, site in enumerate(sites) %}
-        {% if not site_hide[j] %}
-        <li {% if site_restrictions[j] and site_restrictions[j] != 'readonly' %} class="restricted-site"{% end %}>{% if site_roles[j] == 'admin' %} <a class="clickable" href="/{{ site }}/_dash">&#9881;</a> {% end %}<a href="/{{ site }}"><b>{{ site_labels[j] }}</b></a>: {% if site_restrictions[j] %}({% raw site_restrictions[j] %}) {% end %}{{ site_titles[j] }}</li>
+      {% for siteInfo in sites %}
+        {% if not siteInfo.hide %}
+        <li {% if siteInfo.restrict and siteInfo.restrict != 'readonly' %} class="restricted-site"{% end %}>{% if siteInfo.role == 'admin' %} <a class="clickable" href="/{{ siteInfo.name }}/_dash">&#9881;</a> {% end %}<a href="/{{ siteInfo.name }}"><b>{{ siteInfo.label }}</b></a>: {% if siteInfo.restrict %}({% raw siteInfo.restrict %}) {% end %}{{ siteInfo.title }}</li>
         {% end %}
       <p></p>
       {% end %}
