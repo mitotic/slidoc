@@ -1304,6 +1304,7 @@ class ActionHandler(BaseHandler):
                     configOpts[key] = value
 
         configOpts.update(site_name=Options['site_name'])
+        configOpts.update(server_url=Options['server_url'])
         if topnav:
             configOpts.update(topnav=','.join(self.get_topnav_list(uploadType=uploadType, session_name=session_name)))
 
@@ -3112,7 +3113,7 @@ class ActionHandler(BaseHandler):
             fileHandles = [open(fpath) for fpath in filePaths]
 
         if Options['debug']:
-            print >> sys.stderr, 'sdserver.compile: %s type=%s, src=%s, index=%s, make=%s, create_toc=%s, topnav=%s, strip=%s:%s, pace=%s:%s, nb=%s, files=%s' % (sliauth.iso_date(nosubsec=True), uploadType, repr(src_path), indexOnly, configOpts.get('make'), configOpts.get('create_toc'), configOpts.get('topnav'), configOpts.get('strip'), defaultOpts.get('strip'), configOpts.get('pace'), defaultOpts.get('pace'), nb_links.keys(), fileNames)
+            print >> sys.stderr, Options['server_url'], 'sdserver.compile: %s type=%s, src=%s, index=%s, server=%s, make=%s, create_toc=%s, topnav=%s, strip=%s:%s, pace=%s:%s, nb=%s, files=%s' % (sliauth.iso_date(nosubsec=True), uploadType, repr(src_path), indexOnly, configOpts.get('server_url'), configOpts.get('make'), configOpts.get('create_toc'), configOpts.get('topnav'), configOpts.get('strip'), defaultOpts.get('strip'), configOpts.get('pace'), defaultOpts.get('pace'), nb_links.keys(), fileNames)
 
         return_html = bool(src_path)
 
@@ -6454,13 +6455,14 @@ def backupSite(dirname='', broadcast=False):
             with open(os.path.join(backup_path,BACKUP_VERSION_FILE), 'r') as f:
                 prev_bak_date = sliauth.parse_date(f.read().split()[0])
                 if prev_bak_date:
+                    rsync_cmd = ['-rpt', '--delete']
+                    if 'exclude_images' in Options['backup_options']:
+                        # Exclude *_images dir from copy of daily backup (to save space)
+                        rsync_cmd += ['--exclude=*_images/']
+
                     if 'seven_day' in Options['backup_options']:
                         # Save daily backup for last seven days
                         day_path = os.path.join(BaseHandler.site_backup_dir, 'day'+prev_bak_date.strftime('%w'))
-                        rsync_cmd = ['-rpt', '--delete']
-                        if 'seven_day_images' not in Options['backup_options']:
-                            # Exclude *_images dir from copy of daily backup (to save space)
-                            rsync_cmd += ['--exclude=*_images/']
 
                         exec_cmd('rsync', rsync_cmd, [backup_path+'/', day_path])
                         backupLink(day_path)
@@ -6468,7 +6470,7 @@ def backupSite(dirname='', broadcast=False):
                     if save_fmt and (datetime.datetime.now().strftime(save_fmt) != prev_bak_date.strftime(save_fmt)):
                         # New week/month; save last daily backup from previous week/month (including *_images)
                         save_path = os.path.join(BaseHandler.site_backup_dir, save_prefix+prev_bak_date.strftime(save_fmt))
-                        exec_cmd('rsync', ['-rpt', '--delete'], [backup_path+'/', save_path])
+                        exec_cmd('rsync', rsync_cmd, [backup_path+'/', save_path])
                         backupLink(save_path)
                         if os.path.exists(SERVER_LOGFILE):
                             if not backupCopy(SERVER_LOGFILE, save_path):
@@ -7246,7 +7248,7 @@ def main():
     define("auth_key", default=Options["auth_key"], help="Authentication key for admin user (at least 20 characters if not localhost; SHOULD be randomly generated, e.g., using 'sliauth.py -g >> _slidoc_config.py')")
     define("auth_type", default=Options["auth_type"], help="none|adminonly|token|@example.com|google|twitter,key,secret,,...")
     define("auth_users", default='', help="filename.txt or [userid]=username[@domain][:role[:site1,site2...];...")
-    define("backup", default="", help="=Backup_dir,HH:MM,seven_day,seven_day_images,weekly,monthly,no_backup,renew_ssl; End Backup_dir with hyphen to automatically append timestamp")
+    define("backup", default="", help="=Backup_dir,HH:MM,seven_day,weekly,monthly,exclude_images,no_backup,renew_ssl; End Backup_dir with hyphen to automatically append timestamp")
     define("config_digest", default="", help="Config file digest (used for secondary server only)")
     define("debug", default=False, help="Debug mode")
     define("dry_proxy_url", default="", help="Dry proxy server URL (used for secondary server only)")
@@ -7486,6 +7488,9 @@ def main():
         print >> sys.stderr, 'sdserver: Restricted sessions matching:', '('+'|'.join(sliauth.RESTRICTED_SESSIONS)+')'
     if Global.config_path:
         print >> sys.stderr, 'sdserver: Config path =', Global.config_path
+
+    if Options['server_url']:
+        print >> sys.stderr, 'sdserver: Server URL =', Options['server_url']
 
     print >> sys.stderr, 'sdserver: OPTIONS', ', '.join(x for x in ('multisite',) if x in Options and Options[x]), ', '.join(x for x in ('debug', 'dry_run', 'dry_run_file_modify', 'insecure_cookie', 'public_pages', 'reload', 'session_versioning', 'xsrf') if getattr(CommandOpts, x))
 
