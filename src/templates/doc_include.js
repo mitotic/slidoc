@@ -793,10 +793,19 @@ Slidoc.pageSetup = function() {
     preInitialize();
     
     // Styles for simple pages, e.g., help
-    if (Slidoc.serverCookie && Slidoc.serverCookie.siteRole) {
-	toggleClass(true, 'slidoc-instructor-view');
-	if (!Slidoc.serverCookie.sites && Slidoc.serverCookie.siteRole == Sliobj.params.adminRole)
-	    toggleClass(true, 'slidoc-rootadmin-view');
+    if (Slidoc.serverCookie) {
+	var sitePrefix = Sliobj.params.siteName;
+	var pathComps = location.pathname.split('/');
+	if (!sitePrefix && pathComps.length  > 1 && pathComps[1] && !pathComps[1].match(/^_/))
+	    sitePrefix = pathComps[1];
+	var siteRole = Slidoc.serverCookie.siteRole;
+	if (!siteRole && Slidoc.serverCookie.sites)
+	    siteRole = getSiteRole(sitePrefix, Slidoc.serverCookie.sites);
+	if (siteRole) {
+	    toggleClass(true, 'slidoc-instructor-view');
+	    if (!Slidoc.serverCookie.sites && Slidoc.serverCookie.siteRole == Sliobj.params.adminRole)
+		toggleClass(true, 'slidoc-rootadmin-view');
+	}
     }
     
     if (Sliobj.reloadCheck) {
