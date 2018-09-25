@@ -55,7 +55,6 @@ except ImportError:
 from xml.etree import ElementTree
 
 LIBRARIES_URL = 'https://mitotic.github.io/slidoc/_libraries'
-RESOURCE_PATH = '_resource'
 
 ADMIN_ROLE = 'admin'
 GRADER_ROLE = 'grader'
@@ -3662,10 +3661,10 @@ def process_input_aux(input_files, input_paths, config_dict, default_args_dict={
 
     def insert_resource(filename):
         if filename.endswith('.js'):
-            return ('<script src="%s/%s"></script>\n' % ('/'+RESOURCE_PATH, filename)) if config.unbundle else ('\n<script>\n%s</script>\n' % templates[filename])
+            return ('<script src="%s/%s"></script>\n' % (config.unbundle, filename)) if config.unbundle else ('\n<script>\n%s</script>\n' % templates[filename])
 
         if filename.endswith('.css'):
-            return ('<link rel="stylesheet" type="text/css" href="%s/%s">\n' % ('/'+RESOURCE_PATH, filename)) if config.unbundle else ('\n<style>\n%s</style>\n' % templates[filename])
+            return ('<link rel="stylesheet" type="text/css" href="%s/%s">\n' % (config.unbundle, filename)) if config.unbundle else ('\n<style>\n%s</style>\n' % templates[filename])
         raise Exception('Invalid filename for insert_resource: '+filename)
 
     start_date_obj = None
@@ -5259,7 +5258,7 @@ alt_parser.add_argument('--test_script', help='Enable scripted testing(=1 OR SCR
 alt_parser.add_argument('--start_date', metavar='DATE', help="Date after which all module releases must start yyyy-mm-dd[Thh:mm]")
 alt_parser.add_argument('--toc_header', metavar='FILE', help='.html or .md header file for ToC')
 alt_parser.add_argument('--topnav', metavar='PATH,PATH2,...', help='=dirs/files/args/path1,path2,... Create top navigation bar (from subdirectory names, HTML filenames, argument filenames, or pathnames)')
-alt_parser.add_argument('--unbundle', help='Unbundle resource files from module files', action="store_true", default=None)
+alt_parser.add_argument('--unbundle', help='URL path for unbundled JS/CSS resource files, e.g., _resource')
 alt_parser.add_argument('--upload_key', metavar='KEY', help='Site auth key for uploading to remote server')
 alt_parser.add_argument('-v', '--verbose', help='Verbose output', action="store_true", default=None)
 
