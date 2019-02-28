@@ -288,7 +288,7 @@ class MDParser(object):
 Nb_convert_url_prefix = 'http://nbviewer.jupyter.org/url/'
 
 Args_obj = md2md.ArgsObj( str_args= ['site_url', 'strip'],
-                          bool_args= [ 'indented', 'overwrite'],
+                          bool_args= ['embed_images', 'indented', 'overwrite'],
                           defaults= {})
 
 if __name__ == '__main__':
