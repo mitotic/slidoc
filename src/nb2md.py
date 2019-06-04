@@ -122,7 +122,7 @@ class NBParser(object):
                             content = base64.b64decode(data['image/'+img_type].strip())
                             self.img_write(img_type, basename, content)
                             title = 'nb_output file="%s"' % basename
-                            self.outbuffer.append("![%s](%s '%s')\n\n" % (alt_text, img_filename, title) )
+                            self.outbuffer.append("![%s](%s '%s')\n\n" % (alt_text, basename, title) )
                         if data_text:
                             self.outbuffer.append( '\n```nb_output\n' + self.normalize(data_text) + '```\n\n')
 

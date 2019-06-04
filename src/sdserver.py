@@ -6851,6 +6851,9 @@ def start_server(site_number=0, restart=False):
             print >> sys.stderr, 'Listening on HTTP port for SSL cert validation'
             IOLoop.current().start()
             return
+        days_left = cert_daysleft()
+        if days_left is not None:
+            print >> sys.stderr, '*****SSL cert:', days_left, 'days before expiry'
         print >> sys.stderr, 'Listening on HTTP port to redirect to HTTPS'
 
     if Options['ssl_options'] and not Options['multisite']:
